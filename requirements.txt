@@ -1,3 +1,4 @@
 aiogram>=3.13,<4
-yt-dlp>=2026.10.26
+# curl-cffi обязателен: экстрактор TikTok маскируется под браузер, без него TikTok не отвечает
+yt-dlp[default,curl-cffi]>=2026.10.26
 pydantic-settings>=2.6,<3

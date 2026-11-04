@@ -78,6 +78,8 @@ sudo /opt/tiktokbot/deploy/update.sh
 
 ## Эксплуатация
 
+- yt-dlp ставится с дополнением `curl-cffi`, без него TikTok отвечает ошибкой
+  «no impersonate target is available»: экстрактор маскируется под браузер.
 - Экстрактор TikTok в yt-dlp ломается чаще остальных. Если бот начал отвечать «не получилось
   скачать», первым делом `pip install -U yt-dlp`.
 - На VPS TikTok иногда режет датацентровые IP. Тогда в `.env` задаётся `YTDLP_PROXY`,
