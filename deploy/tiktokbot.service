@@ -12,6 +12,11 @@ ExecStart=__APP_DIR__/.venv/bin/python -m bot
 Restart=always
 RestartSec=5
 
+# Страховка для соседних сервисов: боту не больше полутора ядер и 1 ГБ памяти.
+# В норме он ест меньше 200 МБ и почти не грузит процессор.
+CPUQuota=150%
+MemoryMax=1G
+
 # Кэш file_id живёт в /var/lib/tiktokbot, его создаёт systemd с нужными правами.
 StateDirectory=tiktokbot
 Environment=CACHE_DB=%S/tiktokbot/cache.sqlite3
