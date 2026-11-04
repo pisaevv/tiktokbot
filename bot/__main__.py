@@ -32,6 +32,7 @@ async def main() -> None:
         prefer_h264=settings.prefer_h264,
         max_concurrent=settings.max_concurrent_downloads,
         download_dir=settings.download_dir,
+        proxy=settings.ytdlp_proxy,
     )
     dp = Dispatcher(downloader=downloader, cache=cache)
     dp.include_router(router)

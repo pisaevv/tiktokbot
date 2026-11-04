@@ -1,0 +1,28 @@
+[Unit]
+Description=TikTok video Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tiktokbot
+Group=tiktokbot
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/python -m bot
+Restart=always
+RestartSec=5
+
+# Кэш file_id живёт в /var/lib/tiktokbot, его создаёт systemd с нужными правами.
+StateDirectory=tiktokbot
+Environment=CACHE_DB=%S/tiktokbot/cache.sqlite3
+Environment=PYTHONUNBUFFERED=1
+
+# Временные файлы видео в приватном /tmp сервиса, лишних прав у процесса нет.
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+# Если репозиторий лежит не в /opt, а в /home, эту строку нужно убрать.
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -193,10 +193,12 @@ class Downloader:
         prefer_h264: bool = False,
         max_concurrent: int = 3,
         download_dir: Path | None = None,
+        proxy: str | None = None,
     ) -> None:
         self._max_bytes = max_bytes
         self._prefer_h264 = prefer_h264
         self._download_dir = download_dir
+        self._proxy = proxy
         self._semaphore = asyncio.Semaphore(max_concurrent)
         if download_dir is not None:
             download_dir.mkdir(parents=True, exist_ok=True)
@@ -232,6 +234,7 @@ class Downloader:
             "fragment_retries": 3,
             "socket_timeout": 30,
             "logger": _YdlLogger(),
+            **({"proxy": self._proxy} if self._proxy else {}),
             **extra,
         }
 

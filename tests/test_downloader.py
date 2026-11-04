@@ -229,3 +229,9 @@ def test_fix_hevc_tag_leaves_h264_alone(tmp_path):
     before = path.read_bytes()
     assert run(fix_hevc_tag(path)) is False
     assert path.read_bytes() == before
+
+
+def test_proxy_is_passed_to_ytdlp_only_when_set(tmp_path):
+    assert "proxy" not in Downloader(max_bytes=1, download_dir=tmp_path)._ydl_opts()
+    opts = Downloader(max_bytes=1, download_dir=tmp_path, proxy="socks5://127.0.0.1:1080")._ydl_opts()
+    assert opts["proxy"] == "socks5://127.0.0.1:1080"

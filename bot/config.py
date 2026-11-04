@@ -26,6 +26,10 @@ class Settings(BaseSettings):
 
     cache_db: Path = Path("cache.sqlite3")
 
+    # Прокси только для yt-dlp, если TikTok не отвечает с IP сервера.
+    # Например socks5://127.0.0.1:1080 или http://user:pass@host:3128
+    ytdlp_proxy: str | None = None
+
     # Куда класть временные файлы. Пусто означает системную temp-папку.
     download_dir: Path | None = None
 
