@@ -1,10 +1,12 @@
 import asyncio
 import copy
+import http.cookiejar
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+import yt_dlp
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import YoutubeDLError
 
@@ -140,7 +142,7 @@ class FakeRuns:
         self.sizes = list(sizes)
         self.selectors = []
 
-    def __call__(self, info, selector, workdir: Path):
+    def __call__(self, info, selector, workdir: Path, cookies=()):
         self.selectors.append(selector)
         size = self.sizes.pop(0)
         path = workdir / f"{len(self.selectors)}.mp4"
@@ -235,3 +237,40 @@ def test_proxy_is_passed_to_ytdlp_only_when_set(tmp_path):
     assert "proxy" not in Downloader(max_bytes=1, download_dir=tmp_path)._ydl_opts()
     opts = Downloader(max_bytes=1, download_dir=tmp_path, proxy="socks5://127.0.0.1:1080")._ydl_opts()
     assert opts["proxy"] == "socks5://127.0.0.1:1080"
+
+
+def make_cookie(name, value, domain=".tiktok.com"):
+    return http.cookiejar.Cookie(
+        version=0, name=name, value=value, port=None, port_specified=False,
+        domain=domain, domain_specified=True, domain_initial_dot=domain.startswith("."),
+        path="/", path_specified=True, secure=True, expires=None, discard=False,
+        comment=None, comment_url=None, rest={},
+    )
+
+
+def test_probe_keeps_session_cookies(tmp_path, monkeypatch):
+    """Cookies, выданные TikTok на разведке, должны попасть в Probe."""
+
+    def fake_extract_info(self, url, download=True, process=True, ie_key=None):
+        self.cookiejar.set_cookie(make_cookie("tt_chain_token", "abc"))
+        return make_info(FORMATS)
+
+    monkeypatch.setattr(yt_dlp.YoutubeDL, "extract_info", fake_extract_info)
+    probe = run(Downloader(max_bytes=50 * MB, download_dir=tmp_path).probe("https://www.tiktok.com/@a/video/1"))
+    assert [(c.name, c.value) for c in probe.cookies] == [("tt_chain_token", "abc")]
+
+
+def test_download_session_receives_probe_cookies(tmp_path, monkeypatch):
+    """Сессия скачивания должна видеть cookies разведки для CDN-хоста TikTok."""
+    seen = {}
+
+    def fake_process_ie_result(self, info, download=True, extra_info=None):
+        seen["cookies"] = {c.name: c.value for c in self.cookiejar.get_cookies_for_url("https://v16-webapp.tiktok.com/x.mp4")}
+        path = tmp_path / "out.mp4"
+        path.write_bytes(b"\0" * 10)
+        return {"format_id": "x", "width": 1, "height": 2, "requested_downloads": [{"filepath": str(path)}]}
+
+    monkeypatch.setattr(yt_dlp.YoutubeDL, "process_ie_result", fake_process_ie_result)
+    downloader = Downloader(max_bytes=50 * MB, download_dir=tmp_path)
+    downloader._run_download(make_info(FORMATS), "b", tmp_path, [make_cookie("tt_chain_token", "abc")])
+    assert seen["cookies"] == {"tt_chain_token": "abc"}

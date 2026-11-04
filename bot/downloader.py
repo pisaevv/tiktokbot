@@ -8,6 +8,10 @@
                 форматы уже на руках.
 3. После скачивания проверяем HEVC-файлы: Apple требует тег hvc1, а не hev1.
    Если нужно, ремуксим через ffmpeg без перекодирования.
+
+Разведка и скачивание идут в разных сессиях yt-dlp, поэтому cookies, которые
+TikTok выдал на первом шаге, переносятся во вторую сессию вручную. Без них
+сервер видео отвечает 403.
 """
 
 from __future__ import annotations
@@ -20,7 +24,8 @@ import re
 import shutil
 import tempfile
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from http.cookiejar import Cookie
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +86,7 @@ class Probe:
     duration: int | None
     webpage_url: str
     info: dict[str, Any]
+    cookies: list[Cookie] = field(default_factory=list)
 
 
 @dataclass(eq=False)
@@ -141,7 +147,7 @@ def translate_error(exc: Exception) -> DownloaderError:
     return DownloaderError(str(exc))
 
 
-def probe_from_info(info: dict[str, Any]) -> Probe:
+def probe_from_info(info: dict[str, Any], cookies: Iterable[Cookie] = ()) -> Probe:
     """Проверяет, что yt-dlp вернул именно видео, и собирает Probe."""
     formats = info.get("formats") or []
     if not formats:
@@ -158,6 +164,7 @@ def probe_from_info(info: dict[str, Any]) -> Probe:
         duration=_as_int(info.get("duration")),
         webpage_url=info.get("webpage_url") or "",
         info=info,
+        cookies=list(cookies),
     )
 
 
@@ -207,8 +214,8 @@ class Downloader:
 
     async def probe(self, url: str) -> Probe:
         async with self._semaphore:
-            info = await asyncio.to_thread(self._extract_sync, url)
-        return probe_from_info(info)
+            info, cookies = await asyncio.to_thread(self._extract_sync, url)
+        return probe_from_info(info, cookies)
 
     async def download(self, probe: Probe) -> Downloaded:
         async with self._semaphore:
@@ -238,8 +245,8 @@ class Downloader:
             **extra,
         }
 
-    def _extract_sync(self, url: str) -> dict[str, Any]:
-        """Достаёт сырой info без выбора формата, сам разворачивает редиректы."""
+    def _extract_sync(self, url: str) -> tuple[dict[str, Any], list[Cookie]]:
+        """Достаёт сырой info без выбора формата и cookies сессии, сам разворачивает редиректы."""
         try:
             with yt_dlp.YoutubeDL(self._ydl_opts()) as ydl:
                 info = ydl.extract_info(url, download=False, process=False)
@@ -252,13 +259,14 @@ class Downloader:
                     info = ydl.extract_info(
                         next_url, download=False, process=False, ie_key=info.get("ie_key")
                     )
+                cookies = list(ydl.cookiejar)
         except YoutubeDLError as exc:
             raise translate_error(exc) from exc
         if not info or info.get("_type") in ("url", "url_transparent"):
             raise UnsupportedLink("не удалось развернуть ссылку")
         if info.get("_type") == "playlist":
             raise UnsupportedLink("ссылка ведёт на список, а не на видео")
-        return info
+        return info, cookies
 
     def _download_sync(self, probe: Probe) -> Downloaded:
         workdir = Path(tempfile.mkdtemp(prefix="tiktok_", dir=self._download_dir))
@@ -266,7 +274,9 @@ class Downloader:
         try:
             for attempt in range(1, MAX_ATTEMPTS + 1):
                 selector = build_selector(self._max_bytes, self._prefer_h264, exclude)
-                path, format_id, width, height = self._run_download(probe.info, selector, workdir)
+                path, format_id, width, height = self._run_download(
+                    probe.info, selector, workdir, probe.cookies
+                )
                 size = path.stat().st_size
                 if size <= self._max_bytes:
                     log.info(
@@ -294,7 +304,7 @@ class Downloader:
             raise
 
     def _run_download(
-        self, info: dict[str, Any], selector: str, workdir: Path
+        self, info: dict[str, Any], selector: str, workdir: Path, cookies: Iterable[Cookie] = ()
     ) -> tuple[Path, str, int | None, int | None]:
         """Один проход yt-dlp по уже извлечённому info с заданным селектором."""
         opts = self._ydl_opts(
@@ -304,6 +314,8 @@ class Downloader:
         )
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
+                for cookie in cookies:
+                    ydl.cookiejar.set_cookie(cookie)
                 result = ydl.process_ie_result(copy.deepcopy(info), download=True)
         except YoutubeDLError as exc:
             if "requested format is not available" in str(exc).lower():
